@@ -2,12 +2,12 @@
 import cv2
 import torch
 from torchvision import transforms as T
+import pandas as pd
 
 from maskrcnn_benchmark.modeling.detector import build_detection_model
 from maskrcnn_benchmark.utils.checkpoint import DetectronCheckpointer
 from maskrcnn_benchmark.structures.image_list import to_image_list
 from maskrcnn_benchmark.modeling.roi_heads.mask_head.inference import Masker
-from maskrcnn_benchmark import layers as L
 
 
 class COCODemo(object):
@@ -97,12 +97,12 @@ class COCODemo(object):
     ]
 
     def __init__(
-        self,
-        cfg,
-        confidence_threshold=0.7,
-        show_mask_heatmaps=False,
-        masks_per_dim=2,
-        min_image_size=224,
+            self,
+            cfg,
+            confidence_threshold=0.7,
+            show_mask_heatmaps=False,
+            masks_per_dim=2,
+            min_image_size=224,
     ):
         self.cfg = cfg.clone()
         self.model = build_detection_model(cfg)
@@ -111,8 +111,7 @@ class COCODemo(object):
         self.model.to(self.device)
         self.min_image_size = min_image_size
 
-        save_dir = cfg.OUTPUT_DIR
-        checkpointer = DetectronCheckpointer(cfg, self.model, save_dir=save_dir)
+        checkpointer = DetectronCheckpointer(cfg, self.model)
         _ = checkpointer.load(cfg.MODEL.WEIGHT)
 
         self.transforms = self.build_transform()
@@ -127,6 +126,8 @@ class COCODemo(object):
         self.confidence_threshold = confidence_threshold
         self.show_mask_heatmaps = show_mask_heatmaps
         self.masks_per_dim = masks_per_dim
+
+        self.result_df = []
 
     def build_transform(self):
         """
@@ -177,9 +178,9 @@ class COCODemo(object):
         result = self.overlay_boxes(result, top_predictions)
         if self.cfg.MODEL.MASK_ON:
             result = self.overlay_mask(result, top_predictions)
-        result = self.overlay_class_names(result, top_predictions)
+        result, labels = self.overlay_class_names(result, top_predictions)
 
-        return result
+        return result, top_predictions.bbox, labels, top_predictions
 
     def compute_prediction(self, original_image):
         """
@@ -308,7 +309,7 @@ class COCODemo(object):
         """
         masks = predictions.get_field("mask")
         masks_per_dim = self.masks_per_dim
-        masks = L.interpolate(
+        masks = torch.nn.functional.interpolate(
             masks.float(), scale_factor=1 / masks_per_dim
         ).byte()
         height, width = masks.shape[-2:]
@@ -355,4 +356,4 @@ class COCODemo(object):
                 image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1
             )
 
-        return image
+        return image, labels
